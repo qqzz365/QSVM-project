@@ -15,31 +15,32 @@ def download_stock_data(ticker, start_date, end_date):
     data = data.dropna()
     return data
 
-# Step 2: Prepare feature and label data
-def prepare_features_labels(data):
-    # Features: Moving averages and technical indicators
-    data['SMA_5'] = data['Close'].rolling(window=5).mean()
-    data['SMA_10'] = data['Close'].rolling(window=10).mean()
-    data = data.dropna()
+# Step 2: Generate features and labels using sliding window
+def generate_sliding_window_features(data, feature_window, target_window):
+    """
+    使用滑動視窗生成特徵與標籤。
+    :param data: 原始數據 DataFrame
+    :param feature_window: 特徵窗長度（例如 126 天）
+    :param target_window: 預測窗長度（例如 5 天）
+    :return: 特徵矩陣和標籤
+    """
+    features = []
+    labels = []
 
-    # Using more features for classical SVM
-    X = data[['SMA_5', 'SMA_10']].values
-    y = np.where(data['Return'] > 0, 1, 0)  # Binary classification
-    return X, y, data
+    for i in range(len(data) - feature_window - target_window):
+        # 特徵窗: 過去 feature_window 天的價格數據
+        feature = data['Close'].iloc[i:i + feature_window].values
+        
+        # 標籤窗: 未來 target_window 天的平均漲跌方向
+        future_returns = data['Return'].iloc[i + feature_window:i + feature_window + target_window]
+        label = 1 if future_returns.mean() > 0 else 0
+        
+        features.append(feature)
+        labels.append(label)
 
-# Calculate RSI
-def calculate_rsi(prices, period=14):
-    delta = prices.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
-
-# Calculate MACD
-def calculate_macd(prices, fast=12, slow=26):
-    exp1 = prices.ewm(span=fast, adjust=False).mean()
-    exp2 = prices.ewm(span=slow, adjust=False).mean()
-    return exp1 - exp2
+    features = np.array(features)
+    labels = np.array(labels)
+    return features, labels
 
 # Step 3: Data preprocessing
 def preprocess_data(X, y):
@@ -113,15 +114,17 @@ def main():
     try:
         # Step 1: Download data
         print("Downloading stock data...")
-        ticker = "0050.TW"  # 0050
-        start_date = "2020-01-01"
-        end_date = "2024-12-17"
+        ticker = "0050.TW"  # Example stock
+        start_date = "2024-01-01"
+        end_date = "2024-12-31"
         data = download_stock_data(ticker, start_date, end_date)
 
-        # Step 2: Prepare features and labels
-        print("Preparing features and labels...")
-        X, y, full_data = prepare_features_labels(data)
-
+        # Step 2: Generate features and labels using sliding window
+        print("Generating sliding window features...")
+        feature_window = 30  # 過去 30 天
+        target_window = 5      # 預測未來 5 天
+        X, y = generate_sliding_window_features(data, feature_window, target_window)
+        X = X.reshape(len(y),-1)
         # Step 3: Preprocess data
         print("Preprocessing data...")
         X_train, X_test, y_train, y_test = preprocess_data(X, y)
@@ -132,9 +135,9 @@ def main():
         print(f"Testing Accuracy: {result['testing_accuracy']:.2%}")
 
         # Step 5: Visualization
-        print("Generating visualization...")
-        test_indices = np.arange(len(full_data)-len(y_test), len(full_data))
-        plot_actual_vs_predicted(full_data, result['predictions'], test_indices, y_test)
+        #print("Generating visualization...")
+        #test_indices = np.arange(len(data) - len(y_test), len(data))
+        #plot_actual_vs_predicted(data, result['predictions'], test_indices, y_test)
 
         # Print classification report
         print("\nDetailed Classification Report:")
